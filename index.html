@@ -18,7 +18,8 @@
 <script>
 const {
   useState,
-  useMemo
+  useMemo,
+  useEffect
 } = React;
 const {
   LineChart,
@@ -34,9 +35,149 @@ const {
 } = Recharts;
 
 /* ------------------------------------------------------------------ */
-/* Data — extracted from the "2026_CRM" sheet                          */
+/* Live data source — Google Sheets "2026_CRM" tab                     */
 /* ------------------------------------------------------------------ */
-const DATA = {
+const SHEET_ID = "1xZgYWSDgXTOOGDPvEzMfIXV_vKFx65bhK9sKsKhJdaQ";
+const GID = "66117704"; // 2026_CRM tab
+const CSV_URL = bust => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&_=${bust}`;
+const COLS = {
+  uv: 2,
+  install: 3,
+  signup: 4,
+  spotselect_unq: 5,
+  carselect_unq: 7,
+  purchase: 9,
+  first_au: 10,
+  mau: 11,
+  orders: 12,
+  revenue: 16,
+  signup_rate: 18,
+  spotselect_rate: 19,
+  carselect_rate: 20,
+  purchase_rate: 23,
+  first_conv_rate: 24,
+  conv_rate: 25,
+  freq_days: 26,
+  ahpu: 27,
+  arpu: 28,
+  cp_disco_rate: 29,
+  avg_cars: 32,
+  avg_spots: 33,
+  active_car: 34,
+  active_spot: 35,
+  utilization_rate: 36
+};
+const DAILY_KEYS = ["uv", "install", "signup", "mau", "orders", "revenue", "utilization_rate"];
+function parseCSV(t) {
+  const rows = [];
+  let row = [],
+    field = "",
+    inQ = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inQ) {
+      if (c === '"') {
+        if (t[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQ = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQ = true;else if (c === ",") {
+        row.push(field);
+        field = "";
+      } else if (c === "\n") {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = "";
+      } else if (c === "\r") {/* skip */} else field += c;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+function num(s) {
+  if (s === null || s === undefined) return null;
+  s = String(s).replace(/[",%\s]/g, "");
+  if (s === "" || s === "-") return null;
+  const v = parseFloat(s);
+  return Number.isNaN(v) ? null : v;
+}
+function parseSheetToData(csvText) {
+  const rows = parseCSV(csvText);
+  const isBlankLabel = r => !r[1] || r[1].trim() === "";
+
+  // A month-summary block is 3 rows (this-year / last-year / YoY%) whose
+  // date/label column (index 1) is blank. Daily rows always carry a date
+  // label there — that's the reliable signal for the section boundary.
+  let monthCount = 0;
+  while (true) {
+    const rCur = rows[1 + 3 * monthCount],
+      rPrev = rows[2 + 3 * monthCount],
+      rYoy = rows[3 + 3 * monthCount];
+    if (!rCur || !isBlankLabel(rCur) || num(rCur[COLS.uv]) === null) break;
+    if (!rPrev || !isBlankLabel(rPrev)) break;
+    if (!rYoy || !isBlankLabel(rYoy)) break;
+    monthCount++;
+    if (monthCount > 24) break;
+  }
+  if (monthCount === 0) throw new Error("월별 요약 행을 찾지 못했습니다.");
+  const months = Array.from({
+    length: monthCount
+  }, (_, i) => `${i + 1}월`);
+  const monthly = {
+    cur: {},
+    prev: {},
+    yoy: {}
+  };
+  for (const key of Object.keys(COLS)) {
+    monthly.cur[key] = [];
+    monthly.prev[key] = [];
+    monthly.yoy[key] = [];
+    for (let k = 0; k < monthCount; k++) {
+      const rCur = rows[1 + 3 * k],
+        rPrev = rows[2 + 3 * k],
+        rYoy = rows[3 + 3 * k];
+      monthly.cur[key].push(num(rCur ? rCur[COLS[key]] : null));
+      monthly.prev[key].push(num(rPrev ? rPrev[COLS[key]] : null));
+      monthly.yoy[key].push(num(rYoy ? rYoy[COLS[key]] : null));
+    }
+  }
+  const dailyStart = 1 + 3 * monthCount;
+  const dailyDates = [];
+  const daily = {};
+  for (const k of DAILY_KEYS) daily[k] = [];
+  for (let r = dailyStart; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || num(row[COLS.uv]) === null) break;
+    dailyDates.push((row[1] || "").replace(/\s*\([^)]*\)/, ""));
+    for (const key of DAILY_KEYS) daily[key].push(num(row[COLS[key]]));
+  }
+  if (dailyDates.length === 0) throw new Error("일별 데이터를 찾지 못했습니다.");
+  return {
+    months,
+    monthly,
+    dailyDates,
+    daily
+  };
+}
+async function fetchLiveData() {
+  const res = await fetch(CSV_URL(Date.now()), {
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error("시트 응답 오류: " + res.status);
+  const text = await res.text();
+  return parseSheetToData(text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Fallback snapshot (used only if the live sheet can't be reached)     */
+/* ------------------------------------------------------------------ */
+const FALLBACK = {
   "months": ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월"],
   "monthly": {
     "cur": {
@@ -428,10 +569,11 @@ function KpiCard({
 /* Funnel visual                                                        */
 /* ------------------------------------------------------------------ */
 function FunnelView({
-  monthIdx
+  monthIdx,
+  data
 }) {
-  const cur = FUNNEL_STAGES.map(s => DATA.monthly.cur[s.key][monthIdx]);
-  const prev = FUNNEL_STAGES.map(s => DATA.monthly.prev[s.key][monthIdx]);
+  const cur = FUNNEL_STAGES.map(s => data.monthly.cur[s.key][monthIdx]);
+  const prev = FUNNEL_STAGES.map(s => data.monthly.prev[s.key][monthIdx]);
   const maxVal = cur[0];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -584,13 +726,13 @@ function FunnelView({
 /* ------------------------------------------------------------------ */
 function MonthlyTrend({
   metricKey,
-  metricLabel,
-  valueFmt
+  valueFmt,
+  data
 }) {
-  const chartData = DATA.months.map((m, i) => ({
+  const chartData = data.months.map((m, i) => ({
     month: m,
-    cur: DATA.monthly.cur[metricKey][i],
-    prev: DATA.monthly.prev[metricKey][i]
+    cur: data.monthly.cur[metricKey][i],
+    prev: data.monthly.prev[metricKey][i]
   }));
   return /*#__PURE__*/React.createElement(ResponsiveContainer, {
     width: "100%",
@@ -666,15 +808,16 @@ function MonthlyTrend({
 }
 
 /* ------------------------------------------------------------------ */
-/* Daily pace chart (August)                                            */
+/* Daily pace chart                                                     */
 /* ------------------------------------------------------------------ */
 function DailyChart({
   metricKey,
-  valueFmt
+  valueFmt,
+  data
 }) {
-  const chartData = DATA.dailyDates.map((d, i) => ({
+  const chartData = data.dailyDates.map((d, i) => ({
     date: d.replace(/\([^)]+\)/, ""),
-    value: DATA.daily[metricKey][i]
+    value: data.daily[metricKey][i]
   }));
   return /*#__PURE__*/React.createElement(ResponsiveContainer, {
     width: "100%",
@@ -725,7 +868,7 @@ function DailyChart({
     labelStyle: {
       color: COLOR.text
     },
-    formatter: v => [valueFmt(v), "8월"]
+    formatter: v => [valueFmt(v), "값"]
   }), /*#__PURE__*/React.createElement(Bar, {
     dataKey: "value",
     fill: COLOR.amber,
@@ -760,10 +903,59 @@ function Pill({
 }
 
 /* ------------------------------------------------------------------ */
-/* Main Dashboard                                                       */
+/* Status badge                                                         */
 /* ------------------------------------------------------------------ */
-function CrmDashboard() {
-  const lastCompleteIdx = 6; // 7월 (Aug is MTD)
+function StatusBadge({
+  status,
+  updatedAt
+}) {
+  const cfg = {
+    loading: {
+      color: COLOR.textDim,
+      label: "시트에서 불러오는 중…"
+    },
+    live: {
+      color: COLOR.good,
+      label: `실시간 연동 · ${updatedAt}`
+    },
+    fallback: {
+      color: COLOR.bad,
+      label: "시트 연결 실패 · 저장된 스냅샷 표시 중"
+    }
+  }[status];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 11,
+      color: cfg.color,
+      fontFamily: FONT_MONO,
+      border: `1px solid ${COLOR.border}`,
+      borderRadius: 8,
+      padding: "6px 10px",
+      background: COLOR.panel
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: "50%",
+      background: cfg.color,
+      display: "inline-block"
+    }
+  }), cfg.label);
+}
+
+/* ------------------------------------------------------------------ */
+/* Main Dashboard (pure — takes data as prop)                           */
+/* ------------------------------------------------------------------ */
+function CrmDashboard({
+  data,
+  status,
+  updatedAt
+}) {
+  const lastCompleteIdx = Math.max(0, data.months.length - 2); // last full month (latest is usually MTD)
   const [funnelMonthIdx, setFunnelMonthIdx] = useState(lastCompleteIdx);
   const [groupId, setGroupId] = useState("funnel");
   const [metricKey, setMetricKey] = useState("mau");
@@ -775,31 +967,33 @@ function CrmDashboard() {
     const i = lastCompleteIdx;
     return {
       uv: {
-        v: DATA.monthly.cur.uv[i],
-        y: DATA.monthly.yoy.uv[i]
+        v: data.monthly.cur.uv[i],
+        y: data.monthly.yoy.uv[i]
       },
       mau: {
-        v: DATA.monthly.cur.mau[i],
-        y: DATA.monthly.yoy.mau[i]
+        v: data.monthly.cur.mau[i],
+        y: data.monthly.yoy.mau[i]
       },
       orders: {
-        v: DATA.monthly.cur.orders[i],
-        y: DATA.monthly.yoy.orders[i]
+        v: data.monthly.cur.orders[i],
+        y: data.monthly.yoy.orders[i]
       },
       revenue: {
-        v: DATA.monthly.cur.revenue[i],
-        y: DATA.monthly.yoy.revenue[i]
+        v: data.monthly.cur.revenue[i],
+        y: data.monthly.yoy.revenue[i]
       },
       arpu: {
-        v: DATA.monthly.cur.arpu[i],
-        y: DATA.monthly.yoy.arpu[i]
+        v: data.monthly.cur.arpu[i],
+        y: data.monthly.yoy.arpu[i]
       },
       utilization: {
-        v: DATA.monthly.cur.utilization_rate[i],
-        y: DATA.monthly.yoy.utilization_rate[i]
+        v: data.monthly.cur.utilization_rate[i],
+        y: data.monthly.yoy.utilization_rate[i]
       }
     };
-  }, []);
+  }, [data, lastCompleteIdx]);
+  const lastMonthLabel = data.months[lastCompleteIdx];
+  const mtdLabel = data.months[data.months.length - 1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: "100vh",
@@ -851,6 +1045,16 @@ function CrmDashboard() {
     }
   }, "방문 → 설치 → 가입 → 탐색 → 예약 → 이용까지의 전환 흐름을 2025년과 비교합니다.")), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "flex-end",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(StatusBadge, {
+    status: status,
+    updatedAt: updatedAt
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 12,
       color: COLOR.textDim,
       fontFamily: FONT_MONO,
@@ -863,7 +1067,7 @@ function CrmDashboard() {
     style: {
       color: COLOR.text
     }
-  }, "2026.01 – 2026.08(MTD, ~8/20)"))), /*#__PURE__*/React.createElement("div", {
+  }, data.months[0], " – ", mtdLabel, "(MTD)")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 12,
@@ -873,32 +1077,32 @@ function CrmDashboard() {
   }, /*#__PURE__*/React.createElement(KpiCard, {
     label: "방문자수 (UV)",
     value: fmtCompact(kpi.uv.v),
-    sub: "7월 · YoY",
+    sub: `${lastMonthLabel} · YoY`,
     yoy: kpi.uv.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "이용자수 (MAU)",
     value: fmtCompact(kpi.mau.v),
-    sub: "7월 · YoY",
+    sub: `${lastMonthLabel} · YoY`,
     yoy: kpi.mau.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "이용건수",
     value: fmtCompact(kpi.orders.v),
-    sub: "7월 · YoY",
+    sub: `${lastMonthLabel} · YoY`,
     yoy: kpi.orders.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "매출",
     value: fmtWon(kpi.revenue.v),
-    sub: "7월 · YoY",
+    sub: `${lastMonthLabel} · YoY`,
     yoy: kpi.revenue.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "인당매출 (ARPU)",
     value: fmtWon(kpi.arpu.v),
-    sub: "7월 · YoY",
+    sub: `${lastMonthLabel} · YoY`,
     yoy: kpi.arpu.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "가동율",
-    value: kpi.utilization.v.toFixed(1) + "%",
-    sub: "7월 · YoY (p)",
+    value: (kpi.utilization.v ?? 0).toFixed(1) + "%",
+    sub: `${lastMonthLabel} · YoY (p)`,
     yoy: kpi.utilization.y
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -930,12 +1134,13 @@ function CrmDashboard() {
       gap: 6,
       flexWrap: "wrap"
     }
-  }, DATA.months.map((m, i) => /*#__PURE__*/React.createElement(Pill, {
-    key: m,
+  }, data.months.map((m, i) => /*#__PURE__*/React.createElement(Pill, {
+    key: m + i,
     active: i === funnelMonthIdx,
     onClick: () => setFunnelMonthIdx(i)
-  }, m, i === 7 ? " (MTD)" : "")))), /*#__PURE__*/React.createElement(FunnelView, {
-    monthIdx: funnelMonthIdx
+  }, m, i === data.months.length - 1 ? " (MTD)" : "")))), /*#__PURE__*/React.createElement(FunnelView, {
+    monthIdx: funnelMonthIdx,
+    data: data
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       background: COLOR.panel,
@@ -988,8 +1193,8 @@ function CrmDashboard() {
     onClick: () => setMetricKey(m.key)
   }, m.label))), /*#__PURE__*/React.createElement(MonthlyTrend, {
     metricKey: activeMetric.key,
-    metricLabel: activeMetric.label,
-    valueFmt: activeMetric.fmt
+    valueFmt: activeMetric.fmt,
+    data: data
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       background: COLOR.panel,
@@ -1014,13 +1219,13 @@ function CrmDashboard() {
       fontWeight: 600,
       margin: 0
     }
-  }, "8월 일별 추이"), /*#__PURE__*/React.createElement("div", {
+  }, mtdLabel, " 일별 추이"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: COLOR.textFaint,
       marginTop: 4
     }
-  }, "8/1 – 8/20 (진행 중인 달, 21일 이후 데이터 미반영)")), /*#__PURE__*/React.createElement("div", {
+  }, "진행 중인 달의 일별 데이터입니다")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -1032,7 +1237,8 @@ function CrmDashboard() {
     onClick: () => setDailyMetricKey(m.key)
   }, m.label)))), /*#__PURE__*/React.createElement(DailyChart, {
     metricKey: dailyMetric.key,
-    valueFmt: dailyMetric.fmt
+    valueFmt: dailyMetric.fmt,
+    data: data
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
@@ -1041,10 +1247,52 @@ function CrmDashboard() {
       borderTop: `1px solid ${COLOR.borderSoft}`,
       paddingTop: 14
     }
-  }, "· 8월은 월중 데이터(MTD)로, 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 전환폭을 시각화했습니다. 막대 옆 %는 직전 단계 대비 전환율입니다.", /*#__PURE__*/React.createElement("br", null), "· 출처: CMS-퍼포먼스 데이터 스프레드시트, 2026_CRM 시트.")));
+  }, "· 월중(MTD) 데이터는 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 전환폭을 시각화했습니다. 막대 옆 %는 직전 단계 대비 전환율입니다.", /*#__PURE__*/React.createElement("br", null), "· 출처: 구글 시트 \"2026_CRM\" 탭에서 실시간으로 불러온 데이터입니다.")));
+}
+
+/* ------------------------------------------------------------------ */
+/* App wrapper — fetches live data, falls back to snapshot on failure   */
+/* ------------------------------------------------------------------ */
+function App() {
+  const [state, setState] = useState({
+    status: "loading",
+    data: FALLBACK,
+    updatedAt: null
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveData().then(data => {
+      if (cancelled) return;
+      setState({
+        status: "live",
+        data,
+        updatedAt: new Date().toLocaleString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          month: "numeric",
+          day: "numeric"
+        })
+      });
+    }).catch(() => {
+      if (cancelled) return;
+      setState({
+        status: "fallback",
+        data: FALLBACK,
+        updatedAt: null
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return /*#__PURE__*/React.createElement(CrmDashboard, {
+    data: state.data,
+    status: state.status,
+    updatedAt: state.updatedAt
+  });
 }
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(CrmDashboard));
+root.render(React.createElement(App));
 </script>
 </body>
 </html>
