@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CRM 퍼널 대시보드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+  html, body { margin: 0; padding: 0; background: #12151B; }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { height: 6px; width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #2A2F3A; border-radius: 4px; }
+</style>
+
+<!-- React + ReactDOM -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- Recharts (charting) + its peer deps -->
+<script crossorigin src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+<script crossorigin src="https://unpkg.com/recharts@2/umd/Recharts.js"></script>
+<!-- Babel standalone: lets the browser run the JSX below directly, no build step -->
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+const {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar,
+} = Recharts;
+
+/* ------------------------------------------------------------------ */
+/* Live data source                                                     */
+/* ------------------------------------------------------------------ */
+const SHEET_ID = "1xZgYWSDgXTOOGDPvEzMfIXV_vKFx65bhK9sKsKhJdaQ";
+const GID = "66117704"; // 2026_CRM tab
+const CSV_URL = (bust) =>
+  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&_=${bust}`;
+
+const COLS = {
+  uv: 2, install: 3, signup: 4, spotselect_unq: 5, carselect_unq: 7, purchase: 9,
+  first_au: 10, mau: 11, orders: 12, revenue: 16,
+  signup_rate: 18, spotselect_rate: 19, carselect_rate: 20, purchase_rate: 23,
+  first_conv_rate: 24, conv_rate: 25, freq_days: 26, ahpu: 27, arpu: 28,
+  cp_disco_rate: 29, avg_cars: 32, avg_spots: 33, active_car: 34, active_spot: 35,
+  utilization_rate: 36,
+};
+const DAILY_KEYS = ["uv", "install", "signup", "mau", "orders", "revenue", "utilization_rate"];
+
+/* Fallback snapshot, used only if the live sheet can't be reached */
+const FALLBACK = {"months":["1월","2월","3월","4월","5월","6월","7월","8월"],"monthly":{"cur":{"uv":[146596,143219,137506,143384,159081,155952,172397,149891],"install":[34598,34162,30878,36692,46276,43821,54246,41174],"signup":[15880,15546,12621,16702,20164,19639,24208,18389],"spotselect_unq":[85222,85271,77432,86128,90673,90355,100889,86838],"carselect_unq":[69237,68724,62567,69080,73195,72125,79164,68710],"purchase":[27312,27389,26803,28865,31027,28719,32012,28050],"first_au":[4501,4659,4016,4742,5695,4506,5612,5201],"mau":[26074,26311,25199,27670,30722,27155,29601,5815],"orders":[51158,48510,49049,55399,62507,54845,58498,47141],"revenue":[2512475787,2672114404,2108184066,2558232480,3159875144,2669623834,3160841664,2762571451],"signup_rate":[45.9,45.5,40.9,45.5,43.6,44.8,44.6,44.7],"spotselect_rate":[58.1,59.5,56.3,60.1,57,57.9,58.5,57.9],"carselect_rate":[47.2,48,45.5,48.2,46,46.2,45.9,45.8],"purchase_rate":[18.6,19.1,19.5,20.1,19.5,18.4,18.6,18.7],"first_conv_rate":[28.3,30,31.8,28.4,28.2,22.9,23.2,28.3],"conv_rate":[17.8,18.4,18.3,19.3,19.3,17.4,17.2,3.9],"freq_days":[1.89,1.78,1.88,1.93,1.96,1.95,1.91,7.87],"ahpu":[19.5,20.6,17,18.2,19.9,18.7,21.8,107],"arpu":[96359,101559,83661,92455,102854,98311,106782,475077],"cp_disco_rate":[28.1,28.3,25.5,27.2,28.1,32.9,47.8,51.3],"avg_cars":[2363,2371,2394,2536,2657,2791,2855,2913],"avg_spots":[1297,1285,1249,1322,1370,1452,1528,1546],"active_car":[1211,1265,1211,1330,1438,1346,1443,1581],"active_spot":[589,596,571,618,660,677,754,812],"utilization_rate":[28.9,34,24.1,26.8,31,24.4,30.4,28.7]},"prev":{"uv":[144512,135683,143092,146687,157554,163356,185921,195463],"install":[42069,36465,39793,41612,45099,48686,63563,64793],"signup":[20018,16968,18392,20103,21972,22525,30451,31129],"spotselect_unq":[84247,78345,82426,85124,91620,95781,110696,115795],"carselect_unq":[69201,64801,68242,70451,76183,78601,90146,92609],"purchase":[28998,27564,30488,32798,35066,35689,38480,37465],"first_au":[5997,5672,6180,6245,8011,7294,8415,9225],"mau":[27719,26173,29724,30293,34775,34264,35611,36998],"orders":[53515,52229,62152,63981,73848,75219,74815,75403],"revenue":[2719011653,2371131136,2721812521,2762165895,3507226176,3269026285,3663760741,4093327076],"signup_rate":[47.6,46.5,46.2,48.3,48.7,46.3,47.9,48],"spotselect_rate":[58.3,57.7,57.6,58,58.2,58.6,59.5,59.2],"carselect_rate":[47.9,47.8,47.7,48,48.4,48.1,48.5,47.4],"purchase_rate":[20.1,20.3,21.3,22.4,22.3,21.8,20.7,19.2],"first_conv_rate":[30,33.4,33.6,31.1,36.5,32.4,27.6,29.6],"conv_rate":[19.2,19.3,20.8,20.7,22.1,21,19.2,18.9],"freq_days":[1.87,1.92,2.01,2.03,2.04,2.1,2.02,1.97],"ahpu":[19.4,17.9,17.4,17.9,20.2,19.6,21.3,22.8],"arpu":[98092,90595,91570,91182,100855,95407,102883,110636],"cp_disco_rate":[17.9,7.7,20.3,28,28.1,27,28.2,31],"avg_cars":[3389,3403,3331,3266,3198,3112,3023,2948],"avg_spots":[1336,1341,1430,1429,1433,1437,1396,1373],"active_car":[1369,1457,1502,1544,1673,1726,1709,1719],"active_spot":[635,694,690,718,750,767,747,738],"utilization_rate":[21.4,18.5,20.9,22.3,29.5,29,33.7,38.5]},"yoy":{"uv":[1.4,5.6,-3.9,-2.3,1,-4.5,-7.3,-23.3],"install":[-17.8,-6.3,-22.4,-11.8,2.6,-10,-14.7,-36.5],"signup":[-20.7,-8.4,-31.4,-16.9,-8.2,-12.8,-20.5,-40.9],"spotselect_unq":[1.2,8.8,-6.1,1.2,-1,-5.7,-8.9,-25],"carselect_unq":[0.1,6.1,-8.3,-1.9,-3.9,-8.2,-12.2,-25.8],"purchase":[-5.8,-0.6,-12.1,-12,-11.5,-19.5,-16.8,-25.1],"first_au":[-24.9,-17.9,-35,-24.1,-28.9,-38.2,-33.3,-43.6],"mau":[-5.9,0.5,-15.2,-8.7,-11.7,-20.7,-16.9,-84.3],"orders":[-4.4,-7.1,-21.1,-13.4,-15.4,-27.1,-21.8,-37.5],"revenue":[-7.6,12.7,-22.5,-7.4,-9.9,-18.3,-13.7,-32.5],"signup_rate":[-3.5,-2.2,-11.6,-5.8,-10.6,-3.1,-6.8,-7],"spotselect_rate":[-0.3,3.1,-2.2,3.5,-2,-1.2,-1.7,-2.2],"carselect_rate":[-1.4,0.5,-4.6,0.3,-4.8,-3.9,-5.3,-3.2],"purchase_rate":[-7.2,-5.9,-8.5,-10,-12.4,-15.7,-10.3,-2.4],"first_conv_rate":[-5.4,-10.3,-5.3,-8.6,-22.5,-29.1,-16.1,-4.6],"conv_rate":[-7.3,-4.8,-11.8,-6.6,-12.5,-17,-10.4,-79.5],"freq_days":[1.5,-7.1,-6.5,-4.9,-3.8,-7.5,-5.5,299.8],"ahpu":[0.4,15.1,-2.2,2,-1.1,-4.5,2.6,368.3],"arpu":[-1.8,12.1,-8.6,1.4,2,3,3.8,329.4],"cp_disco_rate":[56.5,269.9,25.6,-3,-0.3,21.6,69.3,65.5],"avg_cars":[-30.3,-30.3,-28.1,-22.4,-16.9,-10.3,-5.6,-1.2],"avg_spots":[-3,-4.2,-12.7,-7.5,-4.4,1.1,9.4,12.6],"active_car":[-11.6,-13.2,-19.4,-13.9,-14,-22,-15.5,-8],"active_spot":[-7.3,-14.2,-17.3,-14,-11.9,-11.8,0.9,10],"utilization_rate":[35.4,83.9,15.3,20.1,5.1,-15.7,-9.7,-25.5]}},"dailyDates":["8/1(토)","8/2(일)","8/3(월)","8/4(화)","8/5(수)","8/6(목)","8/7(금)","8/8(토)","8/9(일)","8/10(월)","8/11(화)","8/12(수)","8/13(목)","8/14(금)","8/15(토)","8/16(일)","8/17(월)","8/18(화)","8/19(수)","8/20(목)","8/21(금)","8/22(토)","8/23(일)"],"daily":{"uv":[21569,19331,18236,18368,19311,18803,19278,19683,18578,18250,18259,18845,18667,21657,20562,19332,17719,17903,18483,18380,18225,18754,17226],"install":[2051,2062,1925,1922,1813,1814,1791,1974,1827,1856,1906,1825,1815,1872,2010,1828,1582,1525,1530,1464,1505,1671,1606],"signup":[939,938,871,840,830,832,778,872,820,846,859,847,769,848,898,770,704,673,691,641,662,755,706],"mau":[2405,2024,1852,1685,1729,1809,2006,2250,1925,1825,1700,1823,1932,2309,2632,2204,1914,1896,1753,1776,1964,2275,2095],"orders":[2472,2075,1906,1732,1776,1870,2065,2323,1997,1876,1744,1862,1984,2368,2699,2256,1981,1947,1810,1839,2034,2357,2168],"revenue":[176058064,123366855,114487795,93265091,97634180,101644618,122525945,153883743,108125515,110235736,94249027,104318336,105602473,154221155,214518409,148593773,113186309,101824700,90524900,91256018,105383473,141187036,96478300],"utilization_rate":[48.1,35.5,38.6,30.5,31.2,33.8,40.9,43.1,31.1,37.9,30.9,33.9,34.9,53.9,68.8,43.5,34.4,35.9,32,32.5,38.1,42.7,37.1]}};
+
+/* ------------------------------------------------------------------ */
+/* CSV parsing                                                          */
+/* ------------------------------------------------------------------ */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c === "\r") { /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function num(s) {
+  if (s === undefined || s === null) return null;
+  s = String(s).replace(/[",%\s]/g, "");
+  if (s === "" || s === "-") return null;
+  const n = parseFloat(s);
+  return Number.isNaN(n) ? null : n;
+}
+
+function buildDataFromRows(rows) {
+  if (!rows || rows.length < 4) throw new Error("시트 데이터가 비어 있습니다.");
+
+  // A month-summary block is 3 rows (this-year / last-year / YoY%) whose
+  // date/label column (index 1) is blank. Daily rows, by contrast, always
+  // carry a date label there (e.g. "8월 1일 (토)") — that's the reliable
+  // signal for where the monthly section ends and the daily section begins.
+  const isBlankLabel = (r) => !r[1] || r[1].trim() === "";
+  let monthCount = 0;
+  while (true) {
+    const rCur = rows[1 + 3 * monthCount], rPrev = rows[2 + 3 * monthCount], rYoy = rows[3 + 3 * monthCount];
+    if (!rCur || !isBlankLabel(rCur) || num(rCur[COLS.uv]) === null) break;
+    if (!rPrev || !isBlankLabel(rPrev)) break;
+    if (!rYoy || !isBlankLabel(rYoy)) break;
+    monthCount++;
+    if (monthCount > 24) break;
+  }
+  if (monthCount === 0) throw new Error("월별 요약 행을 찾지 못했습니다.");
+
+  const months = Array.from({ length: monthCount }, (_, i) => `${i + 1}월`);
+  const monthly = { cur: {}, prev: {}, yoy: {} };
+  for (const key of Object.keys(COLS)) {
+    monthly.cur[key] = []; monthly.prev[key] = []; monthly.yoy[key] = [];
+    for (let k = 0; k < monthCount; k++) {
+      const rCur = rows[1 + 3 * k], rPrev = rows[2 + 3 * k], rYoy = rows[3 + 3 * k];
+      monthly.cur[key].push(num(rCur ? rCur[COLS[key]] : null));
+      monthly.prev[key].push(num(rPrev ? rPrev[COLS[key]] : null));
+      monthly.yoy[key].push(num(rYoy ? rYoy[COLS[key]] : null));
+    }
+  }
+
+  const dailyStart = 1 + 3 * monthCount;
+  const dailyDates = [];
+  const daily = {}; for (const k of DAILY_KEYS) daily[k] = [];
+  for (let r = dailyStart; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || num(row[COLS.uv]) === null) break;
+    dailyDates.push((row[1] || "").replace(/\s*\([^)]*\)/, ""));
+    for (const key of DAILY_KEYS) daily[key].push(num(row[COLS[key]]));
+  }
+
+  return { months, monthly, dailyDates, daily };
+}
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* ------------------------------------------------------------------ */
+const COLOR = {
+  bg: "#12151B", panel: "#1A1E26", panelAlt: "#20242D", border: "#2A2F3A",
+  borderSoft: "#232833", text: "#EDEFF3", textDim: "#9AA3B2", textFaint: "#5C6472",
+  amber: "#E8A33D", amberDim: "#8A6224", slate: "#6C8CAE", slateDim: "#3E5063",
+  good: "#5FB98B", bad: "#E2664F",
+};
+const FONT_DISPLAY = "'Space Grotesk', 'Pretendard', system-ui, sans-serif";
+const FONT_MONO = "'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace";
+const FONT_BODY = "'Pretendard', 'IBM Plex Sans KR', system-ui, sans-serif";
+
+const fmt = (n, digits = 0) => {
+  if (n === null || n === undefined || Number.isNaN(n)) return "–";
+  return n.toLocaleString("ko-KR", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+};
+const fmtCompact = (n) => {
+  if (n === null || n === undefined) return "–";
+  if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + "억";
+  if (Math.abs(n) >= 10000) return (n / 10000).toFixed(1) + "만";
+  return fmt(n);
+};
+const fmtWon = (n) => {
+  if (n === null || n === undefined) return "–";
+  if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(2) + "억원";
+  if (Math.abs(n) >= 10000) return Math.round(n / 10000).toLocaleString("ko-KR") + "만원";
+  return fmt(n) + "원";
+};
+
+const YoyTag = ({ v, invert = false }) => {
+  if (v === null || v === undefined) return <span style={{ color: COLOR.textFaint }}>–</span>;
+  const positive = invert ? v < 0 : v > 0;
+  const color = v === 0 ? COLOR.textDim : positive ? COLOR.good : COLOR.bad;
+  const arrow = v > 0 ? "▲" : v < 0 ? "▼" : "•";
+  return (
+    <span style={{ color, fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600 }}>
+      {arrow} {Math.abs(v).toFixed(1)}%
+    </span>
+  );
+};
+
+const FUNNEL_STAGES = [
+  { key: "uv", label: "방문", sub: "UV" },
+  { key: "install", label: "설치", sub: "Install" },
+  { key: "signup", label: "가입", sub: "Signup" },
+  { key: "spotselect_unq", label: "스팟조회", sub: "Spot" },
+  { key: "carselect_unq", label: "차량조회", sub: "Car" },
+  { key: "purchase", label: "예약행동", sub: "Purchase" },
+  { key: "mau", label: "이용", sub: "MAU" },
+];
+
+const METRIC_GROUPS = [
+  { id: "funnel", label: "퍼널 지표", metrics: [
+    { key: "uv", label: "방문자수 (UV)", fmt: fmtCompact },
+    { key: "install", label: "설치수", fmt: fmtCompact },
+    { key: "signup", label: "가입수", fmt: fmtCompact },
+    { key: "purchase", label: "예약행동자수", fmt: fmtCompact },
+    { key: "first_au", label: "첫이용자수", fmt: fmtCompact },
+    { key: "mau", label: "이용자수 (MAU)", fmt: fmtCompact },
+    { key: "orders", label: "이용건수", fmt: fmtCompact },
+    { key: "revenue", label: "매출", fmt: fmtWon },
+  ]},
+  { id: "rate", label: "전환율", metrics: [
+    { key: "signup_rate", label: "가입율", fmt: (v) => v?.toFixed(1) + "%" },
+    { key: "spotselect_rate", label: "스팟조회율", fmt: (v) => v?.toFixed(1) + "%" },
+    { key: "carselect_rate", label: "차량조회율", fmt: (v) => v?.toFixed(1) + "%" },
+    { key: "purchase_rate", label: "예약행동율", fmt: (v) => v?.toFixed(1) + "%" },
+    { key: "first_conv_rate", label: "첫이용전환율", fmt: (v) => v?.toFixed(1) + "%" },
+    { key: "conv_rate", label: "이용전환율", fmt: (v) => v?.toFixed(1) + "%" },
+  ]},
+  { id: "unit", label: "단가·빈도", metrics: [
+    { key: "arpu", label: "인당매출 (ARPU)", fmt: fmtWon },
+    { key: "ahpu", label: "인당이용시간", fmt: (v) => v?.toFixed(1) + "h" },
+    { key: "freq_days", label: "인당이용건수", fmt: (v) => v?.toFixed(2) + "건" },
+    { key: "cp_disco_rate", label: "쿠폰할인율", fmt: (v) => v?.toFixed(1) + "%" },
+  ]},
+  { id: "supply", label: "공급 환경", metrics: [
+    { key: "avg_cars", label: "평균 차량수", fmt: fmtCompact },
+    { key: "avg_spots", label: "스팟수", fmt: fmtCompact },
+    { key: "active_car", label: "활성 차량수", fmt: fmtCompact },
+    { key: "active_spot", label: "활성 스팟수", fmt: fmtCompact },
+    { key: "utilization_rate", label: "가동율", fmt: (v) => v?.toFixed(1) + "%" },
+  ]},
+];
+
+const DAILY_METRICS = [
+  { key: "uv", label: "방문자수 (UV)", fmt: fmtCompact },
+  { key: "install", label: "설치수", fmt: fmtCompact },
+  { key: "signup", label: "가입수", fmt: fmtCompact },
+  { key: "mau", label: "이용자수", fmt: fmtCompact },
+  { key: "orders", label: "이용건수", fmt: fmtCompact },
+  { key: "revenue", label: "매출", fmt: fmtWon },
+  { key: "utilization_rate", label: "가동율", fmt: (v) => v?.toFixed(1) + "%" },
+];
+
+function KpiCard({ label, value, sub, yoy, invert }) {
+  return (
+    <div style={{ background: COLOR.panel, border: `1px solid ${COLOR.border}`, borderRadius: 10, padding: "16px 18px", flex: "1 1 150px", minWidth: 150 }}>
+      <div style={{ fontSize: 11, color: COLOR.textDim, letterSpacing: 0.4, marginBottom: 8, fontFamily: FONT_BODY }}>{label}</div>
+      <div style={{ fontFamily: FONT_MONO, fontSize: 24, fontWeight: 700, color: COLOR.text, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+        <YoyTag v={yoy} invert={invert} />
+        <span style={{ fontSize: 11, color: COLOR.textFaint }}>{sub}</span>
+      </div>
+    </div>
+  );
+}
+
+function FunnelView({ data, monthIdx }) {
+  const cur = FUNNEL_STAGES.map((s) => data.monthly.cur[s.key][monthIdx]);
+  const prev = FUNNEL_STAGES.map((s) => data.monthly.prev[s.key][monthIdx]);
+  const maxVal = cur[0] || 1;
+  const prevMax = prev[0] || 1;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {FUNNEL_STAGES.map((s, i) => {
+        const curVal = cur[i], prevVal = prev[i];
+        const curPct = ((curVal || 0) / maxVal) * 100;
+        const prevPct = ((prevVal || 0) / prevMax) * 100;
+        const drop = i > 0 && cur[i - 1] ? ((curVal / cur[i - 1]) * 100).toFixed(0) : null;
+        return (
+          <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 92, textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 13, color: COLOR.text, fontFamily: FONT_BODY, fontWeight: 600 }}>{s.label}</div>
+              <div style={{ fontSize: 10, color: COLOR.textFaint, fontFamily: FONT_MONO }}>{s.sub}</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ position: "relative", height: 26, background: COLOR.panelAlt, borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${prevPct}%`, background: COLOR.slateDim, opacity: 0.55 }} />
+                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${curPct}%`, background: COLOR.amber, borderRadius: 4, transition: "width .3s" }} />
+              </div>
+            </div>
+            <div style={{ width: 200, flexShrink: 0, display: "flex", alignItems: "baseline", gap: 8, fontFamily: FONT_MONO }}>
+              <span style={{ color: COLOR.text, fontWeight: 700, fontSize: 14, minWidth: 72, textAlign: "right" }}>{fmtCompact(curVal)}</span>
+              <span style={{ color: COLOR.textFaint, fontSize: 11 }}>vs {fmtCompact(prevVal)}</span>
+              {drop && <span style={{ color: COLOR.textFaint, fontSize: 11, marginLeft: "auto" }}>{drop}%</span>}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", gap: 16, marginTop: 4, fontSize: 11, color: COLOR.textDim, fontFamily: FONT_BODY }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 10, height: 10, background: COLOR.amber, borderRadius: 2, display: "inline-block" }} />금년
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 10, height: 10, background: COLOR.slateDim, borderRadius: 2, display: "inline-block", opacity: 0.8 }} />전년 동월
+        </span>
+        <span style={{ marginLeft: "auto", color: COLOR.textFaint }}>막대 오른쪽 %는 직전 단계 대비 전환율</span>
+      </div>
+    </div>
+  );
+}
+
+function MonthlyTrend({ data, metricKey, valueFmt }) {
+  const chartData = data.months.map((m, i) => ({ month: m, cur: data.monthly.cur[metricKey][i], prev: data.monthly.prev[metricKey][i] }));
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={chartData} margin={{ top: 8, right: 16, left: 4, bottom: 0 }}>
+        <CartesianGrid stroke={COLOR.borderSoft} vertical={false} />
+        <XAxis dataKey="month" stroke={COLOR.textFaint} tick={{ fontFamily: FONT_MONO, fontSize: 11, fill: COLOR.textDim }} axisLine={{ stroke: COLOR.border }} tickLine={false} />
+        <YAxis stroke={COLOR.textFaint} tick={{ fontFamily: FONT_MONO, fontSize: 11, fill: COLOR.textDim }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtCompact(v)} width={54} />
+        <Tooltip contentStyle={{ background: COLOR.panelAlt, border: `1px solid ${COLOR.border}`, borderRadius: 8, fontFamily: FONT_MONO, fontSize: 12 }} labelStyle={{ color: COLOR.text }} formatter={(v, name) => [valueFmt(v), name === "cur" ? "금년" : "전년"]} />
+        <Line type="monotone" dataKey="prev" stroke={COLOR.slate} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3, fill: COLOR.slate }} name="prev" />
+        <Line type="monotone" dataKey="cur" stroke={COLOR.amber} strokeWidth={2.5} dot={{ r: 3.5, fill: COLOR.amber }} name="cur" />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function DailyChart({ data, metricKey, valueFmt }) {
+  const chartData = data.dailyDates.map((d, i) => ({ date: d, value: data.daily[metricKey][i] }));
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+        <CartesianGrid stroke={COLOR.borderSoft} vertical={false} />
+        <XAxis dataKey="date" stroke={COLOR.textFaint} tick={{ fontFamily: FONT_MONO, fontSize: 10, fill: COLOR.textDim }} axisLine={{ stroke: COLOR.border }} tickLine={false} interval={Math.max(0, Math.floor(chartData.length / 15))} />
+        <YAxis stroke={COLOR.textFaint} tick={{ fontFamily: FONT_MONO, fontSize: 11, fill: COLOR.textDim }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtCompact(v)} width={54} />
+        <Tooltip contentStyle={{ background: COLOR.panelAlt, border: `1px solid ${COLOR.border}`, borderRadius: 8, fontFamily: FONT_MONO, fontSize: 12 }} labelStyle={{ color: COLOR.text }} formatter={(v) => [valueFmt(v), "값"]} />
+        <Bar dataKey="value" fill={COLOR.amber} radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function Pill({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, padding: "6px 13px", borderRadius: 999,
+      border: `1px solid ${active ? COLOR.amber : COLOR.border}`,
+      background: active ? "rgba(232,163,61,0.12)" : "transparent",
+      color: active ? COLOR.amber : COLOR.textDim, cursor: "pointer", whiteSpace: "nowrap", transition: "all .15s",
+    }}>
+      {children}
+    </button>
+  );
+}
+
+function CrmDashboardLive() {
+  const [data, setData] = useState(null);
+  const [status, setStatus] = useState("loading");
+  const [lastFetched, setLastFetched] = useState(null);
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const res = await fetch(CSV_URL(Date.now()));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      const rows = parseCSV(text);
+      const parsed = buildDataFromRows(rows);
+      setData(parsed);
+      setStatus("live");
+      setLastFetched(new Date());
+    } catch (e) {
+      setData(FALLBACK);
+      setStatus("fallback");
+      setLastFetched(null);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const monthCount = data ? data.months.length : 0;
+  const lastDayCount = data ? data.dailyDates.length : 0;
+  const latestIsMtd = lastDayCount > 0 && lastDayCount < 28;
+  const lastCompleteIdx = data ? Math.max(0, monthCount - (latestIsMtd ? 2 : 1)) : 0;
+
+  const [funnelMonthIdx, setFunnelMonthIdx] = useState(null);
+  const [groupId, setGroupId] = useState("funnel");
+  const [metricKey, setMetricKey] = useState("mau");
+  const [dailyMetricKey, setDailyMetricKey] = useState("uv");
+
+  useEffect(() => {
+    if (data && funnelMonthIdx === null) setFunnelMonthIdx(lastCompleteIdx);
+  }, [data, lastCompleteIdx, funnelMonthIdx]);
+
+  const group = METRIC_GROUPS.find((g) => g.id === groupId);
+  const activeMetric = group.metrics.find((m) => m.key === metricKey) || group.metrics[0];
+  const dailyMetric = DAILY_METRICS.find((m) => m.key === dailyMetricKey);
+
+  const kpi = useMemo(() => {
+    if (!data) return null;
+    const i = lastCompleteIdx;
+    const get = (k) => ({ v: data.monthly.cur[k][i], y: data.monthly.yoy[k][i] });
+    return { uv: get("uv"), mau: get("mau"), orders: get("orders"), revenue: get("revenue"), arpu: get("arpu"), utilization: get("utilization_rate") };
+  }, [data, lastCompleteIdx]);
+
+  if (!data) {
+    return (
+      <div style={{ minHeight: "100vh", background: COLOR.bg, color: COLOR.textDim, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_BODY }}>
+        시트에서 데이터를 불러오는 중...
+      </div>
+    );
+  }
+
+  const latestMonthLabel = data.months[monthCount - 1];
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLOR.bg, color: COLOR.text, fontFamily: FONT_BODY, padding: "28px 20px 60px" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+        <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: COLOR.amber, letterSpacing: 2, fontFamily: FONT_MONO, marginBottom: 6 }}>2026_CRM · MONTHLY FUNNEL</div>
+            <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>CRM 퍼널 대시보드</h1>
+            <div style={{ color: COLOR.textDim, fontSize: 13, marginTop: 6 }}>방문 → 설치 → 가입 → 탐색 → 예약 → 이용까지의 전환 흐름을 전년과 비교합니다.</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <button onClick={load} style={{
+              fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 8,
+              border: `1px solid ${COLOR.border}`, background: COLOR.panel, color: COLOR.text, cursor: "pointer",
+            }}>
+              {status === "loading" ? "새로고침 중…" : "↻ 지금 새로고침"}
+            </button>
+            <div style={{ fontSize: 11, color: COLOR.textFaint, fontFamily: FONT_MONO }}>
+              {status === "live" && lastFetched && `실시간 · ${lastFetched.toLocaleString("ko-KR")} 조회`}
+              {status === "fallback" && "시트 연결 실패 · 저장된 스냅샷 표시 중"}
+              {status === "loading" && "불러오는 중…"}
+            </div>
+          </div>
+        </div>
+
+        {status === "fallback" && (
+          <div style={{ background: "rgba(226,102,79,0.1)", border: `1px solid ${COLOR.bad}`, color: COLOR.bad, borderRadius: 8, padding: "10px 14px", fontSize: 12.5, marginBottom: 20 }}>
+            구글 시트에서 실시간 데이터를 불러오지 못해 마지막으로 저장된 스냅샷을 표시하고 있습니다. 시트 공유 설정이 "링크가 있는 모든 사용자"인지 확인해 주세요.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
+          <KpiCard label="방문자수 (UV)" value={fmtCompact(kpi.uv.v)} sub={`${data.months[lastCompleteIdx]} · YoY`} yoy={kpi.uv.y} />
+          <KpiCard label="이용자수 (MAU)" value={fmtCompact(kpi.mau.v)} sub={`${data.months[lastCompleteIdx]} · YoY`} yoy={kpi.mau.y} />
+          <KpiCard label="이용건수" value={fmtCompact(kpi.orders.v)} sub={`${data.months[lastCompleteIdx]} · YoY`} yoy={kpi.orders.y} />
+          <KpiCard label="매출" value={fmtWon(kpi.revenue.v)} sub={`${data.months[lastCompleteIdx]} · YoY`} yoy={kpi.revenue.y} />
+          <KpiCard label="인당매출 (ARPU)" value={fmtWon(kpi.arpu.v)} sub={`${data.months[lastCompleteIdx]} · YoY`} yoy={kpi.arpu.y} />
+          <KpiCard label="가동율" value={(kpi.utilization.v ?? 0).toFixed(1) + "%"} sub={`${data.months[lastCompleteIdx]} · YoY(p)`} yoy={kpi.utilization.y} />
+        </div>
+
+        <div style={{ background: COLOR.panel, border: `1px solid ${COLOR.border}`, borderRadius: 14, padding: "22px 24px", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 600, margin: 0 }}>월별 전환 퍼널</h2>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {data.months.map((m, i) => (
+                <Pill key={m} active={i === funnelMonthIdx} onClick={() => setFunnelMonthIdx(i)}>
+                  {m}{i === monthCount - 1 && latestIsMtd ? " (MTD)" : ""}
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <FunnelView data={data} monthIdx={funnelMonthIdx ?? lastCompleteIdx} />
+        </div>
+
+        <div style={{ background: COLOR.panel, border: `1px solid ${COLOR.border}`, borderRadius: 14, padding: "22px 24px", marginBottom: 24 }}>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 600, margin: 0 }}>월별 추이 (금년 vs 전년)</h2>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6, marginTop: 14 }}>
+            {METRIC_GROUPS.map((g) => (
+              <Pill key={g.id} active={g.id === groupId} onClick={() => { setGroupId(g.id); setMetricKey(g.metrics[0].key); }}>{g.label}</Pill>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {group.metrics.map((m) => (
+              <Pill key={m.key} active={m.key === metricKey} onClick={() => setMetricKey(m.key)}>{m.label}</Pill>
+            ))}
+          </div>
+          <MonthlyTrend data={data} metricKey={activeMetric.key} valueFmt={activeMetric.fmt} />
+        </div>
+
+        <div style={{ background: COLOR.panel, border: `1px solid ${COLOR.border}`, borderRadius: 14, padding: "22px 24px", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 600, margin: 0 }}>{latestMonthLabel} 일별 추이</h2>
+              <div style={{ fontSize: 12, color: COLOR.textFaint, marginTop: 4 }}>
+                {latestIsMtd ? `진행 중인 달 (최근 업데이트분까지 ${lastDayCount}일)` : "완결된 달"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {DAILY_METRICS.map((m) => (
+                <Pill key={m.key} active={m.key === dailyMetricKey} onClick={() => setDailyMetricKey(m.key)}>{m.label}</Pill>
+              ))}
+            </div>
+          </div>
+          <DailyChart data={data} metricKey={dailyMetric.key} valueFmt={dailyMetric.fmt} />
+        </div>
+
+        <div style={{ fontSize: 11.5, color: COLOR.textFaint, lineHeight: 1.7, borderTop: `1px solid ${COLOR.borderSoft}`, paddingTop: 14 }}>
+          · 이 대시보드는 열릴 때마다 구글 시트(2026_CRM 탭)에서 최신 값을 자동으로 다시 불러옵니다. 우측 상단의 "지금 새로고침"으로 즉시 갱신할 수도 있습니다.<br />
+          · 진행 중인 달은 월중 데이터(MTD)이므로, 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.<br />
+          · 출처: CMS-퍼포먼스 데이터 스프레드시트, 2026_CRM 시트.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<CrmDashboardLive />);
+</script>
+</body>
+</html>
