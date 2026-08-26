@@ -361,27 +361,39 @@ const FUNNEL_STAGES = [{
 }, {
   key: "install",
   label: "설치",
-  sub: "Install"
+  sub: "Install",
+  rateBase: "uv",
+  rateBaseLabel: "방문 대비"
 }, {
   key: "signup",
   label: "가입",
-  sub: "Signup"
+  sub: "Signup",
+  rateKey: "signup_rate",
+  rateBaseLabel: "설치 대비"
 }, {
   key: "spotselect_unq",
   label: "스팟조회",
-  sub: "Spot"
+  sub: "Spot",
+  rateKey: "spotselect_rate",
+  rateBaseLabel: "방문 대비"
 }, {
   key: "carselect_unq",
   label: "차량조회",
-  sub: "Car"
+  sub: "Car",
+  rateKey: "carselect_rate",
+  rateBaseLabel: "방문 대비"
 }, {
   key: "purchase",
   label: "예약행동",
-  sub: "Purchase"
+  sub: "Purchase",
+  rateKey: "purchase_rate",
+  rateBaseLabel: "방문 대비"
 }, {
   key: "mau",
   label: "이용",
-  sub: "MAU"
+  sub: "MAU",
+  rateKey: "conv_rate",
+  rateBaseLabel: "방문 대비"
 }];
 const METRIC_GROUPS = [{
   id: "funnel",
@@ -612,7 +624,16 @@ function FunnelView({
     const prevVal = prev[i];
     const curPct = curVal / maxVal * 100;
     const prevPct = prevVal / prev[0] * 100;
-    const dropFromPrevStage = i > 0 ? (curVal / cur[i - 1] * 100).toFixed(0) : null;
+    // Official rate as defined in the sheet: most stages are "vs UV",
+    // signup is "vs install" — NOT simply "vs the previous funnel row",
+    // since spot/car browsing doesn't require signing up first.
+    let stageRate = null;
+    if (s.rateKey) {
+      stageRate = data.monthly.cur[s.rateKey] ? data.monthly.cur[s.rateKey][monthIdx] : null;
+    } else if (s.rateBase) {
+      const baseVal = data.monthly.cur[s.rateBase][monthIdx];
+      stageRate = baseVal ? curVal / baseVal * 100 : null;
+    }
     return /*#__PURE__*/React.createElement("div", {
       key: s.key,
       style: {
@@ -674,7 +695,7 @@ function FunnelView({
       }
     }))), /*#__PURE__*/React.createElement("div", {
       style: {
-        width: 200,
+        width: 220,
         flexShrink: 0,
         display: "flex",
         alignItems: "baseline",
@@ -694,13 +715,18 @@ function FunnelView({
         color: COLOR.textFaint,
         fontSize: 11
       }
-    }, "vs ", fmtCompact(prevVal)), dropFromPrevStage && /*#__PURE__*/React.createElement("span", {
+    }, "vs ", fmtCompact(prevVal)), stageRate !== null && /*#__PURE__*/React.createElement("span", {
       style: {
         color: COLOR.textFaint,
         fontSize: 11,
-        marginLeft: "auto"
+        marginLeft: "auto",
+        whiteSpace: "nowrap"
       }
-    }, dropFromPrevStage, "%")));
+    }, stageRate.toFixed(1), "% ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        opacity: 0.7
+      }
+    }, "(", s.rateBaseLabel, ")"))));
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -744,7 +770,7 @@ function FunnelView({
       marginLeft: "auto",
       color: COLOR.textFaint
     }
-  }, "막대 오른쪽 %는 직전 단계 대비 전환율")));
+  }, "막대 오른쪽 %는 각 지표의 공식 전환율입니다 (기준은 괄호 표기)")));
 }
 
 /* ------------------------------------------------------------------ */
@@ -990,7 +1016,7 @@ function CrmDashboard({
   const activeMetric = group.metrics.find(m => m.key === metricKey) || group.metrics[0];
   const dailyMetric = DAILY_METRICS.find(m => m.key === dailyMetricKey);
   const kpi = useMemo(() => {
-    const i = lastCompleteIdx;
+    const i = funnelMonthIdx;
     return {
       uv: {
         v: data.monthly.cur.uv[i],
@@ -1017,8 +1043,8 @@ function CrmDashboard({
         y: data.monthly.yoy.utilization_rate[i]
       }
     };
-  }, [data, lastCompleteIdx]);
-  const lastMonthLabel = data.months[lastCompleteIdx];
+  }, [data, funnelMonthIdx]);
+  const kpiMonthLabel = data.months[funnelMonthIdx] + (funnelMonthIdx === data.months.length - 1 ? "(MTD)" : "");
   const mtdLabel = data.months[data.months.length - 1];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1103,32 +1129,32 @@ function CrmDashboard({
   }, /*#__PURE__*/React.createElement(KpiCard, {
     label: "방문자수 (UV)",
     value: fmtCompact(kpi.uv.v),
-    sub: `${lastMonthLabel} · YoY`,
+    sub: `${kpiMonthLabel} · YoY`,
     yoy: kpi.uv.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "이용자수 (MAU)",
     value: fmtCompact(kpi.mau.v),
-    sub: `${lastMonthLabel} · YoY`,
+    sub: `${kpiMonthLabel} · YoY`,
     yoy: kpi.mau.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "이용건수",
     value: fmtCompact(kpi.orders.v),
-    sub: `${lastMonthLabel} · YoY`,
+    sub: `${kpiMonthLabel} · YoY`,
     yoy: kpi.orders.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "매출",
     value: fmtWon(kpi.revenue.v),
-    sub: `${lastMonthLabel} · YoY`,
+    sub: `${kpiMonthLabel} · YoY`,
     yoy: kpi.revenue.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "인당매출 (ARPU)",
     value: fmtWon(kpi.arpu.v),
-    sub: `${lastMonthLabel} · YoY`,
+    sub: `${kpiMonthLabel} · YoY`,
     yoy: kpi.arpu.y
   }), /*#__PURE__*/React.createElement(KpiCard, {
     label: "가동율",
     value: (kpi.utilization.v ?? 0).toFixed(1) + "%",
-    sub: `${lastMonthLabel} · YoY (p)`,
+    sub: `${kpiMonthLabel} · YoY (p)`,
     yoy: kpi.utilization.y
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1273,7 +1299,7 @@ function CrmDashboard({
       borderTop: `1px solid ${COLOR.borderSoft}`,
       paddingTop: 14
     }
-  }, "· 월중(MTD) 데이터는 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 전환폭을 시각화했습니다. 막대 옆 %는 직전 단계 대비 전환율입니다.", /*#__PURE__*/React.createElement("br", null), "· 출처: 구글 시트 \"2026_CRM\" 탭에서 실시간으로 불러온 데이터입니다.")));
+  }, "· 월중(MTD) 데이터는 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 막대폭을 시각화했습니다. 막대 옆 %는 각 지표의 공식 전환율입니다 (가입율은 설치자 대비, 나머지는 방문자 대비).", /*#__PURE__*/React.createElement("br", null), "· 출처: 구글 시트 \"2026_CRM\" 탭에서 실시간으로 불러온 데이터입니다.")));
 }
 
 /* ------------------------------------------------------------------ */
