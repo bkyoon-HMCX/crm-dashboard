@@ -67,7 +67,12 @@ const COLS = {
   avg_spots: 33,
   active_car: 34,
   active_spot: 35,
-  utilization_rate: 36
+  utilization_rate: 36,
+  active_car_ratio: 37,
+  active_spot_ratio: 38,
+  userdays_per_car: 42,
+  rev_per_car: 43,
+  rev_per_hours: 44
 };
 const DAILY_KEYS = ["uv", "install", "signup", "mau", "orders", "short_orders", "long_orders", "revenue", "utilization_rate"];
 function parseCSV(t) {
@@ -209,7 +214,12 @@ const FALLBACK = {
       "avg_spots": [1297, 1285, 1249, 1322, 1370, 1452, 1528, 1546],
       "active_car": [1211, 1265, 1211, 1330, 1438, 1346, 1443, 1570],
       "active_spot": [589, 596, 571, 618, 660, 677, 754, 809],
-      "utilization_rate": [28.9, 34, 24.1, 26.8, 31, 24.4, 30.4, 24.8]
+      "utilization_rate": [28.9, 34, 24.1, 26.8, 31, 24.4, 30.4, 24.8],
+      "active_car_ratio": [51.2, 53.4, null, null, null, null, null, null],
+      "active_spot_ratio": [45.4, 46.4, null, null, null, null, null, null],
+      "userdays_per_car": [11.04, 11.1, null, null, null, null, null, null],
+      "rev_per_car": [1063344, 1127220, null, null, null, null, null, null],
+      "rev_per_hours": [2602, 2752, null, null, null, null, null, null]
     },
     "prev": {
       "uv": [144512, 135683, 143092, 146687, 157554, 163356, 185921, 195463],
@@ -238,7 +248,12 @@ const FALLBACK = {
       "avg_spots": [1336, 1341, 1430, 1429, 1433, 1437, 1396, 1373],
       "active_car": [1369, 1457, 1502, 1544, 1673, 1726, 1709, 1719],
       "active_spot": [635, 694, 690, 718, 750, 767, 747, 738],
-      "utilization_rate": [21.4, 18.5, 20.9, 22.3, 29.5, 29, 33.7, 38.5]
+      "utilization_rate": [21.4, 18.5, 20.9, 22.3, 29.5, 29, 33.7, 38.5],
+      "active_car_ratio": [40.4, 42.8, null, null, null, null, null, null],
+      "active_spot_ratio": [47.5, 51.7, null, null, null, null, null, null],
+      "userdays_per_car": [8.18, 7.69, null, null, null, null, null, null],
+      "rev_per_car": [802358, 696872, null, null, null, null, null, null],
+      "rev_per_hours": [2860, 2393, null, null, null, null, null, null]
     },
     "yoy": {
       "uv": [1.4, 5.6, -3.9, -2.3, 1, -4.5, -7.3, -33],
@@ -267,7 +282,12 @@ const FALLBACK = {
       "avg_spots": [-3, -4.2, -12.7, -7.5, -4.4, 1.1, 9.4, 12.6],
       "active_car": [-11.6, -13.2, -19.4, -13.9, -14, -22, -15.5, -8.7],
       "active_spot": [-7.3, -14.2, -17.3, -14, -11.9, -11.8, 0.9, 9.7],
-      "utilization_rate": [35.4, 83.9, 15.3, 20.1, 5.1, -15.7, -9.7, -35.5]
+      "utilization_rate": [35.4, 83.9, 15.3, 20.1, 5.1, -15.7, -9.7, -35.5],
+      "active_car_ratio": [26.8, null, null, null, null, null, null, null],
+      "active_spot_ratio": [-4.4, null, null, null, null, null, null, null],
+      "userdays_per_car": [34.9, null, null, null, null, null, null, null],
+      "rev_per_car": [32.5, null, null, null, null, null, null, null],
+      "rev_per_hours": [-9.0, null, null, null, null, null, null, null]
     }
   },
   "dailyDates": ["8/1(토)", "8/2(일)", "8/3(월)", "8/4(화)", "8/5(수)", "8/6(목)", "8/7(금)", "8/8(토)", "8/9(일)", "8/10(월)", "8/11(화)", "8/12(수)", "8/13(목)", "8/14(금)", "8/15(토)", "8/16(일)", "8/17(월)", "8/18(화)", "8/19(수)", "8/20(목)"],
@@ -486,6 +506,18 @@ const METRIC_GROUPS = [{
     key: "cp_disco_rate",
     label: "쿠폰할인율",
     fmt: v => v?.toFixed(1) + "%"
+  }, {
+    key: "userdays_per_car",
+    label: "대당이용자수",
+    fmt: v => v?.toFixed(2) + "명"
+  }, {
+    key: "rev_per_car",
+    label: "대당매출",
+    fmt: fmtWon
+  }, {
+    key: "rev_per_hours",
+    label: "시간당예약요금",
+    fmt: fmtWon
   }]
 }, {
   id: "supply",
@@ -506,6 +538,14 @@ const METRIC_GROUPS = [{
     key: "active_spot",
     label: "활성 스팟수",
     fmt: fmtCompact
+  }, {
+    key: "active_car_ratio",
+    label: "활성차량율",
+    fmt: v => v?.toFixed(1) + "%"
+  }, {
+    key: "active_spot_ratio",
+    label: "활성스팟율",
+    fmt: v => v?.toFixed(1) + "%"
   }, {
     key: "utilization_rate",
     label: "가동율",
