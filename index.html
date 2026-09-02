@@ -613,6 +613,10 @@ function FunnelView({
   const cur = FUNNEL_STAGES.map(s => data.monthly.cur[s.key][monthIdx]);
   const prev = FUNNEL_STAGES.map(s => data.monthly.prev[s.key][monthIdx]);
   const maxVal = cur[0];
+  // For the top (UV) row, both years are 100% of themselves by definition,
+  // so the current-year bar always fully covers the previous-year bar.
+  // Use a shared basis just for that row so the size difference is visible.
+  const uvBasis = Math.max(cur[0] || 0, prev[0] || 0) || 1;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -622,8 +626,8 @@ function FunnelView({
   }, FUNNEL_STAGES.map((s, i) => {
     const curVal = cur[i];
     const prevVal = prev[i];
-    const curPct = curVal / maxVal * 100;
-    const prevPct = prevVal / prev[0] * 100;
+    const curPct = i === 0 ? curVal / uvBasis * 100 : curVal / maxVal * 100;
+    const prevPct = i === 0 ? prevVal / uvBasis * 100 : prevVal / prev[0] * 100;
     // Official rate as defined in the sheet: most stages are "vs UV",
     // signup is "vs install" — NOT simply "vs the previous funnel row",
     // since spot/car browsing doesn't require signing up first.
@@ -695,7 +699,7 @@ function FunnelView({
       }
     }))), /*#__PURE__*/React.createElement("div", {
       style: {
-        width: 220,
+        width: 190,
         flexShrink: 0,
         display: "flex",
         alignItems: "baseline",
@@ -722,11 +726,7 @@ function FunnelView({
         marginLeft: "auto",
         whiteSpace: "nowrap"
       }
-    }, stageRate.toFixed(1), "% ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        opacity: 0.7
-      }
-    }, "(", s.rateBaseLabel, ")"))));
+    }, stageRate.toFixed(1), "%")));
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -770,7 +770,7 @@ function FunnelView({
       marginLeft: "auto",
       color: COLOR.textFaint
     }
-  }, "막대 오른쪽 %는 각 지표의 공식 전환율입니다 (기준은 괄호 표기)")));
+  }, "막대 오른쪽 %는 방문 대비 전환율입니다 (가입율만 설치 대비)")));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1299,7 +1299,7 @@ function CrmDashboard({
       borderTop: `1px solid ${COLOR.borderSoft}`,
       paddingTop: 14
     }
-  }, "· 월중(MTD) 데이터는 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 막대폭을 시각화했습니다. 막대 옆 %는 각 지표의 공식 전환율입니다 (가입율은 설치자 대비, 나머지는 방문자 대비).", /*#__PURE__*/React.createElement("br", null), "· 출처: 구글 시트 \"2026_CRM\" 탭에서 실시간으로 불러온 데이터입니다.")));
+  }, "· 월중(MTD) 데이터는 전년 동월(완결된 한 달) 수치와 단순 비교 시 YoY(%)가 실제 추세보다 크게 벌어져 보일 수 있습니다.", /*#__PURE__*/React.createElement("br", null), "· 방문자수(UV) 기준 100%로 두고 각 단계 막대폭을 시각화했습니다. 막대 오른쪽 %는 각 지표의 방문 대비 전환율입니다 (가입율만 설치 대비).", /*#__PURE__*/React.createElement("br", null), "· 출처: 구글 시트 \"2026_CRM\" 탭에서 실시간으로 불러온 데이터입니다.")));
 }
 
 /* ------------------------------------------------------------------ */
