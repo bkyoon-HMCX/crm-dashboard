@@ -821,7 +821,9 @@ function MonthlyTrend({
   valueFmt,
   data
 }) {
-  const chartData = data.months.map((m, i) => ({
+  // Exclude the last month if it's still in progress (MTD) — only show completed months.
+  const completeCount = Math.max(1, data.months.length - 1);
+  const chartData = data.months.slice(0, completeCount).map((m, i) => ({
     month: m,
     cur: data.monthly.cur[metricKey][i],
     prev: data.monthly.prev[metricKey][i]
